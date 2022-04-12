@@ -1,0 +1,96 @@
+#!/bin/bash
+
+dirArray=("$(pwd)/")
+i=0
+reactLibRegex="('react';)$"
+
+function deleteLine() {
+	# The empty single quote string is the extension of the backup, if it's empty, there's no backup
+	# On MacOS, the extension must be set, otherwise, the result will be logged into console, rather than modify the file
+	sed -i '' "$1d" $2
+}
+
+function analyseFile() {
+	flowCommentLineNumber=0
+	flowFixMeLines=()
+	linenumber=1
+	isJsx=false
+	while read line; do
+	  if [[ "$line" =~ @flow ]]; then
+		  flowCommentLineNumber=$linenumber
+		fi
+		if [[ $line =~ $reactLibRegex && $line =~ React ]]; then
+		  isJsx=true
+		fi
+		if [[ "$line" =~ FlowFixMe ]]; then
+		  flowFixMeLines+=($((linenumber-${#flowFixMeLines[@]}-1)))
+		fi
+
+		((linenumber++))
+	done < $filename
+
+	
+	if [[ "$file" == "${file%.js}" ]]; then
+		newFile=${file%.jsx}
+	else
+		newFile=${file%.js}
+	fi
+	echo $newFile
+	if [[ "$isJsx" == true ]]; then
+		newFileExt=tsx
+	else
+		newFileExt=ts
+	fi
+}
+
+function migrate() {
+	filename=$1
+	echo $filename
+	analyseFile
+	newFileName="$newFile.$newFileExt"
+	echo $newFileName
+	git mv $file $newFileName
+	if (($flowCommentLineNumber>0)); then
+		deleteLine $flowCommentLineNumber $newFileName
+	fi
+	for j in ${flowFixMeLines[@]}; do
+		deleteLine $j $newFileName
+	done
+}
+
+function migrateAll() {
+  dir=${dirArray[$i]}
+	cd $dir
+	for file in *.{js,jsx}; do
+	  # if not matched
+	  if [[ $file == "*.js" || $file == "*.jsx" || $file =~ (\.test\.js)$ ]]; then
+		  continue
+		fi
+
+		migrate "$dir$file"
+	done
+}
+
+function main() {
+	if [[ $1 =~ (\.js)$ ]]; then
+	  file=$1
+	  migrate "${dirArray[$i]}$1"
+	else
+		while ((i < ${#dirArray[@]})); do
+			migrateAll
+
+			if [[ $1 == "-r" ]]; then
+				currentDir=$(pwd)
+				for folder in */; do
+					nextDir="$currentDir/$folder"
+					if [ -d $nextDir ]; then
+						dirArray[${#dirArray[@]}]=$nextDir
+					fi
+				done
+			fi
+			((i++))
+		done
+	fi
+}
+
+main $1
